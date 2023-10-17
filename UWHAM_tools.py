@@ -4,7 +4,7 @@ from numpy import logaddexp
 from scipy.special import logsumexp
 import argparse, sys, math, textwrap
 
-exps = lambda x: np.exp(x - np.max(x))
+exps = lambda x: np.exp(x - np.max(x, axis=-1)[...,None])
 
 def UWHAM(BE, tol=1e-6, niter=None):
     """
@@ -25,11 +25,18 @@ def UWHAM(BE, tol=1e-6, niter=None):
     Outputs:
         F : estimated relative free energy for each hamiltonian
         Si : sample-entropy for all samples concatenated together
-            (for use in computing weights)
+        w : UWHAM weights for all samples in all Hamiltonians, normalized so
+            the top weight is 1. This is an array of shape (N,M) for N
+            Hamiltonians, and M total samples which are the input samples
+            concatenated together. Use this for weighted averages.
+            >>> Fs, Si, w = UWHAM([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
+            >>> E1 = np.concatenate([E_S1H1, E_S2H1])
+            >>> BEbar1 = np.average(E1, weights=w[0])
     """
+
+    # check that the input data is sensible
     n_hamiltonians = len(BE)
     N_samples = np.array([len(BEij) for BEij in BE[0]])
-    # check that the input data is sensible
     if not all(len(BEi) == n_hamiltonians for BEi in BE):
         raise ValueError("Number of sample BE arrays per Hamiltonian differs")
     if not all(len(BEij) == ni for BEi in BE for BEij,ni in zip(BEi,N_samples)):
@@ -49,26 +56,11 @@ def UWHAM(BE, tol=1e-6, niter=None):
     while is_not_finished(Fs, Si):
         Si = -logsumexp((logN + Fs) - BE.T, axis=1)
         Fs = -logsumexp(Si - BE, axis=1)
+
+    # calculate final UWHAM weights, normalized so top weight is 1
+    weights = exps(Si - BE)
     
-    return Fs, Si
-
-def get_weights(Si, BEi):
-    """
-    Compute UWHAM weights for a target Hamiltonian+Temperature
-
-    Inputs:
-        Si : UWHAM sample-entropies for all samples, concatenated in one array.
-        BEi : Boltzmann factors (neg log likelihood) from a target hamiltonian
-        for all samples, concatenated in one array.
-    Outputs:
-        weights : weights for all samples, for the target hamiltonian.
-                  Using the weights one can compute weighted averages:
-            >>> (F1, F2), Si = UWHAM([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
-            >>> BE1 = np.concatenate([BE_S1H1, BE_S2H1])
-            >>> w1 = get_weights(Si, BE1)
-            >>> BEbar1 = np.average(BE1, weights=w1)
-    """
-    return exps(Si - BEi)
+    return Fs, Si, weights
 
 def nlogdotexp(nM, v):
     # efficiently implements -np.log(np.dot(np.exp(-M), np.exp(v)))
@@ -101,6 +93,7 @@ def UWHAM_manyPT(B, E, tol=1e-6, niter=None, Bt=None):
     Outputs:
         F : Free energy for each temperature
         Si : sample-entropy for each sample (for use in computing weights)
+        w : UWHAM weights for use in averages
     """
     # This implementation requires N**2 space. Can be modified to require
     # N space if needed, but requires extra mutliply operation in loop
@@ -147,11 +140,11 @@ def Neff(weights):
     case one weight is very large.
 
     Inputs:
-        weights : sample weights
+        weights : sample weights, only last axis is evaluated if dims > 1
     Outputs:
         Neff : estimate of effective number of samples
     """
-    return (np.sum(weights)**2)/np.sum(weights**2)
+    return (np.sum(weights, axis=-1)**2)/np.sum(weights**2, axis=-1)
 
 def UWHAM_generalized(samples, hamiltonians, tol=1e-6, niter=None):
     """
@@ -168,6 +161,13 @@ def UWHAM_generalized(samples, hamiltonians, tol=1e-6, niter=None):
         F : estimated relative free energy for each hamiltonian
         Si : sample-entropy for each sample (for use in computing weights)
              returned as a list-of-arrays, one array per hamiltonian.
+        w : UWHAM weights for all samples in all Hamiltonians, normalized so
+            the top weight is 1. This is an array of shape (N,M) for N
+            Hamiltonians, and M total samples which are the input samples
+            concatenated together. Use this for weighted averages.
+            >>> Fs, Si, w = UWHAM([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
+            >>> E1 = np.concatenate([E_S1H1, E_S2H1])
+            >>> BEbar1 = np.average(E1, weights=w[0])
     """
     BE = [[BEb(sa) for sa in samples] for BEb in hamiltonians]
     return  UWHAM(BE, tol=tol, niter=niter)
@@ -200,7 +200,6 @@ def get_iteration_condition(niter, tol):
 
     return terminate_condition
 
-
 def main():
     parser = argparse.ArgumentParser(description='Perform UWHAM Analysis', 
                                      epilog=textwrap.dedent("""
@@ -231,8 +230,17 @@ def main():
         "ΔlogZ = ..."
             The relative log partition functions of each Hamiltonian, relative
             to the mean. (i.e, relative free energies of each Hamiltonian)
+
+    If an output file is supplied with the --weights option, the UWHAM weights
+    for all samples in all Hamiltonians will be saved to file. This will be an
+    array of shape (N,M) for N Hamiltonians, and M total samples which are the
+    input samples concatenated together. Use this for weighted averages:
+
+        >>> weights = np.load('weights.npy')
+        >>> Vbar1 = np.average(E1, weights=w[0]) # average under 0th potential
     """), formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('BE', nargs='*', help="Boltzmann factor files")
+    parser.add_argument('--weights', help="save UWHAM weights to this file")
     parser.add_argument('--tol', type=float, default=1e-6,
                         help="change in Fs at which to stop iteration")
     parser.add_argument('--niter', type=int,
@@ -253,12 +261,14 @@ def main():
 
     tol, niter = args.tol, args.niter
 
-    Fs, Si = UWHAM(BE, tol, niter)
-    weights = [get_weights(Si, np.concatenate(BEi)) for BEi in BE]
+    Fs, Si, weights = UWHAM(BE, tol, niter)
     
     print("Ns: " + ", ".join(str(len(BEi)) for BEi in BE[0]))
-    print(f"Neffs: " + ", ".join(f"{Neff(w):.3f}" for w in weights))
+    print(f"Neffs: " + ", ".join(f"{n:.3f}" for n in Neff(weights)))
     print(f"ΔlogZ: " + ", ".join(f"{d:.3f}" for d in Fs - np.mean(Fs)))
+
+    if args.weights:
+        np.save(weights, args.weights)
 
 def test():
     # Demo system:
@@ -296,14 +306,14 @@ def test():
     BE_S2H1 = beta1*E2
     BE_S2H2 = beta2*E2
 
-    (F1, F2), Si = UWHAM([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
-    w1, w2 = [get_weights(Si, Bi*E) for Bi in (beta1, beta2)]
-    Ebar1, Ebar2 = np.average(E, weights=w1), np.average(E, weights=w2)
+    (F1, F2), Si, w = UWHAM([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
+    Ebar1, Ebar2 = np.average(E, weights=w[0]), np.average(E, weights=w[1])
+    print(Neff(w))
 
     print("")
     print("Computed:")
     print(f"F1 = {F1:.6g}   F2 = {F2:.6g}, diff={F1-F2:.6g}")
-    print(f"Neff1: {Neff(w1):.9g}  Neff2: {Neff(w2):.7g}")
+    print(f"Neff1: {Neff(w[0]):.9g}  Neff2: {Neff(w[1]):.7g}")
     print(f"Ebar1: {Ebar1:.6g}  Ebar2: {Ebar2:.6g}")
     #print("w1:", np.array2string(w1, edgeitems=2))
     #print("Si:", np.array2string(Si, edgeitems=2))
@@ -323,17 +333,16 @@ def test():
     plt.ylim(-50,10)
 
     plt.figure()
-    plt.plot(Es, w1, '.')
-    plt.plot(Es, w2, '.')
+    plt.plot(Es, w[0], '.')
+    plt.plot(Es, w[1], '.')
     plt.show()
 
     print("")
     print("Test with a single Hamiltonian")
-    Fs, Si = UWHAM([[BE_S1H1]])
-    w = get_weights(Si, BE_S1H1)
+    Fs, Si, w = UWHAM([[BE_S1H1]])
     print("F", Fs)
-    print("w:", np.array2string(w, edgeitems=2))
-    print("Neff:", Neff(w))
+    print("w:", np.array2string(w[0], edgeitems=2))
+    print("Neff:", Neff(w[0]))
 
 if __name__ == '__main__':
     main()

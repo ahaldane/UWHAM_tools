@@ -8,17 +8,19 @@ Simple script implementing UWHAM (Unbinned Weighted Histogram Analysis Method) i
 The basic functionality is accessible by running the script from the command line.
 
 ```
-usage: UWHAM_tools.py [-h] [--tol TOL] [--niter NITER] [BE ...]
+usage: UWHAM_tools.py [-h] [--weights WEIGHTS] [--tol TOL] [--niter NITER]
+                      [BE ...]
 
 Perform UWHAM Analysis
 
 positional arguments:
-  BE             Boltzmann factor files
+  BE                 Boltzmann factor files
 
 options:
-  -h, --help     show this help message and exit
-  --tol TOL      change in Fs at which to stop iteration
-  --niter NITER  If given, ignore tol and iterate this many times
+  -h, --help         show this help message and exit
+  --weights WEIGHTS  save UWHAM weights to this file
+  --tol TOL          change in Fs at which to stop iteration
+  --niter NITER      If given, ignore tol and iterate this many times
 ```
 
 "BE" should be a set of numpy ".npy" array files of negative log-likelihoods, in
@@ -47,6 +49,14 @@ The script will print out:
         The relative log partition functions of each Hamiltonian, relative
         to the mean. (i.e, relative free energies of each Hamiltonian)
 
+If an output file is supplied with the --weights option, the UWHAM weights
+for all samples in all Hamiltonians will be saved to file. This will be an
+array of shape (N,M) for N Hamiltonians, and M total samples which are the
+input samples concatenated together. Use this for weighted averages:
+
+    >>> weights = np.load('weights.npy')
+    >>> Vbar1 = np.average(V, weights=w[0]) # average under 0th potential
+
 ### Programmatic Usage
 
 The script is also importable in python and provides the following additional methods:
@@ -58,28 +68,20 @@ The script is also importable in python and provides the following additional me
   UWHAM for an arbitrary set of Hamiltonians, given the callable Hamiltonian
   functions and a set of samples from each Hamiltonian.
 
-* `get_weights(Si, BEi)`  
-  Compute UWHAM weights for a target Hamiltonian+Temperature.
-  Using the weights one can compute weighted averages:
-```
-  >>> (F1, F2), Si = UWHAM([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
-  >>> BE1 = np.concatenate([BE_S1H1, BE_S2H1])
-  >>> w1 = get_weights(Si, BE1)
-  >>> BEbar1 = np.average(BE1, weights=w1)
-```
-
 * `Neff(weights)`  
-   An estimate of the effective number of samples corresponding to this set of
-   weights.
+  An estimate of the effective number of samples corresponding to this set of
+  weights.
 
 * `UWHAM_manyPT(B, E, tol=1e-6, niter=None, Bt=None)`  
   UWHAM for the same Hamiltonian at a large number of different temperatures,
   given the E of each sample and B it was generated with.
 
-* `manyPT_weights(Bt, Si, E)`  
-  UWHAM weights for a target temperature for a manyPT dataset
+ * `manyPT_weights(Bt, Si, E)`
+   UWHAM weights for a target temperature Bt for a manyPT dataset
 
 ## Theoretical Background
+
+### Derivation of the UWHAM equations
 
 Given samples from multiple likelihood functions (i.e., Hamiltonians and temperatures), UWHAM allows us to estimate the
 partition function ratio between the different Hamiltonians, among other quantities, as well as to evaluate ensemble averages by combining data from multiple simulations, giving increased statistical power.
@@ -103,8 +105,7 @@ We can use a "reweighting" identity to relate $p_t(u)$ to $p_a(u)$:
 ```math
 \begin{aligned}
 p_a(u) &= \frac{e^{-q_a(u)}}{Z_a} \frac{p_t(u)}{e^{-q_t(u)}/Z_t} \\
-       &= \frac{e^{q_t(u) - q_a(u)}}{Z_t/Z_a} p_t(u)  \\
-       &\equiv \frac{r_{at}(u)}{ R_{at}} p_t(u)
+       &= \frac{e^{q_t(u) - q_a(u)}}{Z_t/Z_a} p_t(u)  \equiv \frac{r_{at}(u)}{ R_{at}} p_t(u)
 \end{aligned}
 ```
 
@@ -152,13 +153,15 @@ since then the equations for $p^\circ_t(u)$ and $R^\circ_{at}$ can be rewritten 
 in which the target temperature $t$ does not appear, and therefore the solution for $F_a$ and $S_i$ is independent of $t$.
 This pair of equations can be solved iteratively. The form of $\log \sum e^x$ in both of these equations allows use of the `logsumexp` function to avoid floating-point overflow and improve numerical precision, and this is used in this module's implementation.
 
+### Interpretation
+
 $F$ gives the log ratio of partition functions, i.e. it can be seen as a
 relative free energy. $S$ behaves a bit like an entropy, though it is really related to a
 log weight.  Note that if we interpret $R^\circ_{at}$ as a ratio $Z^\circ_t/Z^\circ_a$, the the weights have an interpretation rewritten as:
 ```math
 w_t(i) = \frac{p^\circ_t(u_i)}{\sum_a N_a p^\circ_a(u_i)}
 ```
-which is the probability of state $u_i$ in hamiltonian $t$ divided by the expected number of times we will see state $u$ in our overall dataset.  In other words, the weight values serve to avoid double-counting if the state $u$ is likely to appear in the samples from multiple Hamiltonians: If $u$ is only likely under a single hamiltonian $a$ so that $p_a(u) \gg p_b(u)\quad \forall b$ then we get $w_a(i) = p^\circ_a(u_i)/(N_a p^\circ_a(u_i)) = 1/N_a$, equivalent to a single count, but if $u_i$ can appear in two Hamiltonians $a$ and $b$ with equal probability and no others, the weight will be $1/(N_a + N_b)$, and if the sample counts are equal $N_b = N_a$ we get a weight of $1/2N_a$ or half a count compared to the previous case, which is sensible as we have a doubled chance of sampling state $u$ in our combined dataset. The weights $w_t(i)$ tell us something about the "overlap" between the different likelihood functions.
+which is the probability of state $u_i$ in Hamiltonian $t$ divided by the expected number of times state $u$ will appear in our total dataset. In other words, the weight values serve to avoid double-counting if the state $u$ is likely to appear in the samples from multiple Hamiltonians: If $u$ is only likely under a single Hamiltonian $a$ as $p_a(u) \gg p_b(u)$ for all $b$, then we get $w_a(i) = p^\circ_a(u_i)/(N_a p^\circ_a(u_i)) = 1/N_a$, equivalent to a single count. If $u_i$ can appear in two Hamiltonians $a$ and $b$ with equal probability and no others, the weight will be $1/(N_a + N_b)$, and if the sample counts are equal $N_b = N_a$ the weight is $1/2N_a$, or half a count compared to the previous case, which makes sense because we have a doubled chance of sampling state $u$ in our combined dataset.
 
 By reversing the change of variables above, we can get the weights
 $w_t(i)$ for any desired target Hamiltonian $t$, and therefore estimate any
@@ -167,7 +170,7 @@ using these weights.
 
 Since such a weighted average uses data from multiple simulations, it
 can have greater statistical power than $N$ samples from a single simulation
-with Hamiltonian $t$.  One way to see this is to consider the weighted average of a set of  Bernoulli trials with success probability $p$, i.e. a weighted average of an indicator function for any property of interest of our system where the weights account for double-counting. That is, for weights $w_i$ and Bernouilli random variables $X_i$, we want to compute the variance of $X_\text{tot} = \frac{\sum_i w_i X_i}{\sum_i w_i}$, as a reflection of the statistical uncertainty of this average. Using the scaling and addition properties of Bernoulli random variables, we find the variance is 
+with Hamiltonian $t$.  One way to see this is to consider the weighted average of a set of  Bernoulli trials with success probability $p$, i.e. a weighted average of an indicator function for any property of interest of our system where the weights account for double-counting. That is, for weights $w_i$ and Bernouilli random variables $X_i$, we want to compute the variance of $X_\text{tot} = \frac{\sum_i w_i X_i}{\sum_i w_i}$, as a reflection of the statistical uncertainty of this average. Using the scaling and addition properties of variances, we find this variance is 
 ```math
 \text{Var}(X_\text{tot}) = \frac{p(1-p)}{N_\text{eff}} \quad\quad\quad\text{with } \quad N_\text{eff} = \frac{(\sum_i w_i)^2}{\sum_i w_i^2}
 ```
@@ -176,7 +179,7 @@ uncertainty of the weighted average behaves as if averaging
 $N_\text{eff}$ unweighted samples. As expected, in the case $w_i =
 1$ for all $i$, i.e. the equal-weight case, we get $N_\text{eff} = N$, and in the case one weight is much larger than the others we get $N_\text{eff} = 1$. 
 
-In practice, the $N_\text{eff}$ for estimates using UWHAM will be greater than the $N_t$ samples from the target Hamiltonian (if the target was one of the sampled Hamiltonians). The degree of increase of $N_\text{eff}$ over $N_t$ will depend on the amount of "overlap" of the different likelihood functions in state space. Its minimum value will be $N_t$, and its maximum value (if all Hamiltonians overlap perfectly) is the total number of samples $N = \sum_a N_a$.
+In practice, the $N_\text{eff}$ for estimates using UWHAM will be greater than the $N_t$ samples from the target Hamiltonian, assuming the target was one of the sampled Hamiltonians. The amount of increase of $N_\text{eff}$ over $N_t$ will depend on the "overlap" of the different likelihood functions in state space. The minimum possible value of $N_\text{eff}$ will be $N_t$ if there is no overlap, and its maximum value will be the total number of samples $N = \sum_a N_a$ if all Hamiltonians overlap perfectly.
 
 ### References
 
@@ -188,11 +191,11 @@ An alternate derivation is given in:
 Theory of binless multi-state free energy estimation with applications to
 protein-ligand binding. J Chem Phys 2012. https://doi.org/10.1063%2F1.3701175
 
-### Example
+## Example
 
 An example computation is provided in the script in method "test". 
 
-In this demonstration, we consider a Hamiltonian that assigns an energy $E(u)$ to all states $u$ of a system, simulated at two different temperatures with inverse temperatures $1/kT_1 = 1.0$ and $1/kT_2 = \sqrt{2}$. In Bayesian language, this corresponds to two different likelihood functions $\log \mathcal{L}_1(E) = -E/kT_1$, $\log \mathcal{L}_2(E) = -E/kT_2$ for obtaining a sample with value $E$. The density of states (aka the prior, in bayesian language) is a gaussian centered at E=0 with standard deviation of 2.
+In this demonstration, we consider a Hamiltonian that assigns an energy $E(u)$ to all states $u$ of a system, simulated at two different temperatures with inverse temperatures $1/kT_1 = 1.0$ and $1/kT_2 = \sqrt{2}$. In Bayesian language, this corresponds to two different likelihood functions $\log \mathcal{L}_1(E) = -E/kT_1$, $\log \mathcal{L}_2(E) = -E/kT_2$ for obtaining a sample with value $E$. The density of states (aka the prior, in Bayesian language) is a Gaussian centered at E=0 with standard deviation of 2.
 
 Analytically, one can show this system has the following properties: 
  * $\mathbb{E}_1[E] = -4$, &nbsp;&nbsp;&nbsp; $\mathbb{E}_2[E] = -4\sqrt{2} \approx -5.6585$, 
