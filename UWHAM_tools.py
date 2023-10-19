@@ -6,7 +6,7 @@ import argparse, sys, math, textwrap
 
 exps = lambda x: np.exp(x - np.max(x, axis=-1)[...,None])
 
-def UWHAM(BE, nsamples, tol=1e-6, niter=None):
+def UWHAM(BE, nsamples, tol=1e-5, niter=None):
     """
     UWHAM for an arbitrary set of hamiltonians and samples, given the
     B*E value (negative log likelihood) evaluated for each sample for each
@@ -130,6 +130,26 @@ def Neff(weights):
     """
     return (np.sum(weights, axis=-1)**2)/np.sum(weights**2, axis=-1)
 
+def overlap(weights):
+    """
+    Measure of the amount of "overlap" of different Hamiltonians, given the
+    UWHAM weight matrix.
+    
+    This uses the "total variational distance" between the weight ditributions
+    for each pair of hamiltonians to measure overlap.
+
+    Inputs:
+        weights : sample weights of shape (N,M) for N Hamiltonians, M samples.
+    Outputs:
+        ovlap : overlap matrix of shape (N,N) showing the state-space overlap
+                of all pairs of Hamiltonians
+    """
+    # get normalized weights
+    wn = weights/np.sum(weights, axis=1, keepdims=True)
+    # get "overlap" between hamiltonian state spaces
+    from scipy.spatial.distance import pdist, squareform
+    return 1-squareform(pdist(wn, 'minkowski', p=1)/2)
+
 def BoltzmannBlock(BE):
     """
     Convert a list-of-lists of Boltzmann factor arrays for UWHAM to a block
@@ -237,6 +257,8 @@ def main():
         "ΔlogZ = ..."
             The relative log partition functions of each Hamiltonian, relative
             to the mean. (i.e, relative free energies of each Hamiltonian)
+        "Overlap matrix: ..."
+            The overlap of state space between all pairs of Hamiltonians.
 
     If an output file is supplied with the --weights option, the UWHAM weights
     for all samples in all Hamiltonians will be saved to file. This will be an
@@ -285,6 +307,11 @@ def main():
     print(f"Neffs: " + ", ".join(f"{n:.3f}" for n in Neff(weights)))
     print(f"ΔlogZ: " + ", ".join(f"{d:.3f}" for d in Fs - np.mean(Fs)))
 
+    print("")
+    print("Overlap matrix:")
+    print(np.array2string(overlap(weights), precision=3, suppress_small=True,  
+                          floatmode='maxprec_equal'))
+
     if args.weights:
         np.save(weights, args.weights)
 
@@ -325,21 +352,27 @@ def test():
     BE_S2H2 = beta2*E2
 
     BE, nsamples = BoltzmannBlock([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
+    #np.save('BE', BE)
+    #np.save('nsamples', nsamples)
 
     (F1, F2), Si, w = UWHAM(BE, nsamples)
     Ebar1, Ebar2 = np.average(E, weights=w[0]), np.average(E, weights=w[1])
-    print(Neff(w))
+    ne = Neff(w)
 
     print("")
     print("Computed:")
     print(f"F1 = {F1:.6g}   F2 = {F2:.6g}, diff={F1-F2:.6g}")
-    print(f"Neff1: {Neff(w[0]):.9g}  Neff2: {Neff(w[1]):.7g}")
+    print(f"Neff1: {ne[0]:.9g}  Neff2: {ne[1]:.7g}")
     print(f"Ebar1: {Ebar1:.6g}  Ebar2: {Ebar2:.6g}")
     #print("w1:", np.array2string(w1, edgeitems=2))
     #print("Si:", np.array2string(Si, edgeitems=2))
     print("")
     print(f"Accuracy in Delta F: {F1-F2:.6g} vs {Fan1-Fan2:.6g}, "
           f"difference = {(F1-F2)-(Fan1-Fan2):.6g}")
+    
+    print("")
+    print("Overlap matrix:")
+    print(overlap(w))
 
     print("")
     print("Without UWHAM: (simple average)")
@@ -361,7 +394,7 @@ def test():
     print("Test with a single Hamiltonian")
     Fs, Si, w = UWHAM(BE_S1H1[None,:], [len(BE_S1H1)])
     print("F", Fs)
-    print("w:", np.array2string(w[0], edgeitems=2))
+    print("w:", np.array2string(w[0], edgeitems=2, threshold=5))
     print("Neff:", Neff(w[0]))
 
 if __name__ == '__main__':

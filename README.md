@@ -55,6 +55,8 @@ The script will print out:
     "ΔlogZ = ..."
         The relative log partition functions of each Hamiltonian, relative
         to the mean. (i.e, relative free energies of each Hamiltonian)
+    "Overlap matrix: ..."
+        The overlap of state space between all pairs of Hamiltonians.
 
 If an output file is specified with the `--weights` option, the UWHAM weights
 for all samples in all Hamiltonians will be saved to file. This will be an
@@ -73,11 +75,15 @@ The script is also importable in python and provides the following additional me
   Botlzmann factors (negative log-likelihood values) evaluated for each sample
   for each Hamiltonian.
 
-* `Neff(weights)`  
+ * `Neff(weights)`  
   An estimate of the effective number of samples corresponding to this set of
   weights.
 
-* `UWHAM_manyPT(B, E, tol=1e-6, niter=None, Bt=None)`  
+ * `overlap(weights)`  
+  Calculate the "overlap" in state space between all pairs of Hamiltonians, 
+  given the UWHAM weights for all samples.
+
+ * `UWHAM_manyPT(B, E, tol=1e-6, niter=None, Bt=None)`  
   UWHAM for the same Hamiltonian at a large number of different temperatures,
   given the E of each sample and B it was generated with.
 
@@ -144,7 +150,7 @@ Note this solution can be interpreted as giving a per-sample weight of
 ```math
   w_t(i) = \frac{1}{ \sum_a N_a \frac{r_{at}(u_i)}{R^\circ_{at}} } 
 ```
-for each sample $u_i$ in our dataset, for $i \in 1..N$. The Hamiltonian from which sample $i$ was drawn does not factor into this interpretation. Then the estimate of $R^\circ_{at}$ can be seen as a weighted mean over the data:
+for each sample $u_i$ in our dataset, for $i \in 1..N$, as the sum over states $\sum_a n_{ua} ...$ is equivalent to a sum over samples $\sum_i 1 ...$, and the Hamiltonian from which sample $i$ was drawn does not factor into this interpretation. Then the estimate of $R^\circ_{at}$ can be seen as a weighted mean over the data:
 ```math
  R^\circ_{at} = \sum_i r_{at}(u_i) w_t(i)
 ```
