@@ -240,12 +240,13 @@ def main():
     perfect square $N^2$ as there should be one set of samples from each of $N$
     potentials, each evaluated for each of the $N$ potentials.
 
-    If `--nsamples` is supplied it should be a `.npy` file of an array of the
-    number of samples obtained for each hamiltonian. In this case, the `BE`
-    argument should be a single `.npy` file with an array of shape `(N,M)`
-    for number of Hamiltonians $N$ and total number of samples $M$, such that
-    element `(i,j)` is the Boltzmann factor under Hamiltonian $i$ for sample
-    $j$.
+    If `--nsamples` is supplied it should be either: 1. a `.npy` file of an
+    array of the number of samples obtained for each hamiltonian, or 2. a
+    comma-separated list of number of samples for each Hamiltonian. If
+    `--nsamples` is supplied the `BE` argument should be a single `.npy` file
+    with an array of shape `(N,M)` for number of Hamiltonians $N$ and total
+    number of samples $M$, such that element `(i,j)` is the Boltzmann factor
+    under Hamiltonian $i$ for sample $j$.
 
     The script will print out:
 
@@ -290,9 +291,15 @@ def main():
         BE = [np.load(fn) for fn in args.BE]
         BE, nsamples = BoltzmannBlock([BE[i*N:(i+1)*N] for i in range(N)])
     else:
-        nsamples = np.load(args.nsamples)
+        # try to load a comma-separated set of ints, otherwise load from file
+        try:
+            nsamples = np.array([int(x) for x in nsamples.split(',')])
+        except:
+            nsamples = np.load(args.nsamples)
+
         if len(args.BE) != 1:
             raise ValueError("If nsamples is given, a signle BE matrix should "
+
                              "be supplied")
         BE = np.load(args.BE[0])
         if np.sum(nsamples) != BE.shape[1]:
