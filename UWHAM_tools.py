@@ -404,6 +404,38 @@ def test():
     print("w:", np.array2string(w[0], edgeitems=2, threshold=5))
     print("Neff:", Neff(w[0]))
 
+def UWHAM_krylov(BE, nsamples, tol=1e-5, niter=None):
+    """
+    Same as UWHAM, but uses a krylov solver.
+    """
+    Nf, Ns = BE.shape[0], np.sum(nsamples)
+    IF, IS = np.eye(Nf), np.eye(Ns)
+
+    logN = np.log(nsamples)
+
+    def fun(x):
+        Fs, Si = x[:Nf], x[Nf:]
+
+        eF = Si - BE
+        eS = (logN + Fs) - BE.T
+
+        f = np.concatenate([Fs + logsumexp(eF, axis=1), 
+                            Si + logsumexp(eS, axis=1)])
+        return f
+        #jac = np.block([[             IF, np.exp(eF + Fs[:,None])],
+        #                [np.exp(eS + Si[:,None]),              IS]])
+        #print(jac.shape)
+        #return f, jac
+
+    x0 = np.zeros(Nf + Ns, dtype='f8')
+    sol = scipy.optimize.root(fun, x0, method='krylov')
+    Fs, Si = sol.x[:Nf], sol.x[Nf:]
+
+    # calculate final UWHAM weights, normalized so top weight is 1
+    weights = exps(Si - BE)
+    
+    return Fs, Si, weights
+
 if __name__ == '__main__':
     main()
     #test()
