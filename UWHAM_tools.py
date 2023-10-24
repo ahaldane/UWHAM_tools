@@ -135,8 +135,10 @@ def overlap(weights):
     Measure of the amount of "overlap" of different Hamiltonians, given the
     UWHAM weight matrix.
     
-    This uses the "total variational distance" between the weight ditributions
-    for each pair of hamiltonians to measure overlap.
+    This uses the measure of overlap provided in eq 10b of 
+    C. H. Bennett, J. Comput. Phys. 22, 245 (1976).
+    which shows this measure reflects the statistical error in UWHAM
+    estimates of relative partition function values.
 
     Inputs:
         weights : sample weights of shape (N,M) for N Hamiltonians, M samples.
@@ -148,7 +150,7 @@ def overlap(weights):
     wn = weights/np.sum(weights, axis=1, keepdims=True)
     # get "overlap" between hamiltonian state spaces
     from scipy.spatial.distance import pdist, squareform
-    return 1-squareform(pdist(wn, 'minkowski', p=1)/2)
+    return 1-squareform(1-2*pdist(wn, lambda a,b: np.sum(a*b/(a+b))))
 
 def BoltzmannBlock(BE):
     """

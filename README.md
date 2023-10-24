@@ -82,7 +82,8 @@ The script is also importable in python and provides the following additional me
 
  * `overlap(weights)`  
   Calculate the "overlap" in state space between all pairs of Hamiltonians
-  as the "total variational distance", given the UWHAM weights for all samples.
+  using an integral over weights for all samples, reflecting the degree of
+  statistical error in ΔlogZ.
 
  * `UWHAM_manyPT(B, E, tol=1e-6, niter=None, Bt=None)`  
   UWHAM for the same Hamiltonian at a large number of different temperatures,
