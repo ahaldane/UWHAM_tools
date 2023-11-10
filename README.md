@@ -178,11 +178,11 @@ This pair of equations can be solved iteratively. The form of $\log \sum e^x$ in
 
 $F$ gives the log ratio of partition functions, i.e. it can be seen as a
 relative free energy. $S$ behaves a bit like an entropy, though it is really related to a
-log weight.  Note that if we interpret $R^\circ_{at}$ as a ratio $Z^\circ_t/Z^\circ_a$, the the weights have an interpretation rewritten as:
+log weight.  Note that if we interpret $R^\circ_{at}$ as a ratio $Z^\circ_t/Z^\circ_a$ giving an estimate of sample probability $\hat{p}_a(u) = e^{-q_a(u)}/R^\circ_a$, the the weights have an interpretation rewritten as:
 ```math
-w_t(i) = \frac{p^\circ_t(u_i)}{\sum_a N_a p^\circ_a(u_i)}
+w_t(i) = \frac{\hat{p}_t(u_i)}{\sum_a N_a \hat{p}_a(u_i)}
 ```
-which is the probability of state $u_i$ in Hamiltonian $t$ divided by the expected number of times state $u$ will appear in our total dataset. In other words, the weight values serve to avoid double-counting if the state $u$ is likely to appear in the samples from multiple Hamiltonians: If $u$ is only likely under a single Hamiltonian $a$ as $p_a(u) \gg p_b(u)$ for all $b$, then we get $w_a(i) = p^\circ_a(u_i)/(N_a p^\circ_a(u_i)) = 1/N_a$, equivalent to a single count. If $u_i$ can appear in two Hamiltonians $a$ and $b$ with equal probability and no others, the weight will be $1/(N_a + N_b)$, and if the sample counts are equal $N_b = N_a$ the weight is $1/2N_a$, or half a count compared to the previous case, which makes sense because we have a doubled chance of sampling state $u$ in our combined dataset.
+which is the sample probability of state $u_i$ in Hamiltonian $t$ divided by the expected number of times state $u$ will appear in our total dataset. In other words, the weight values serve to avoid double-counting if the state $u$ is likely to appear in the samples from multiple Hamiltonians: If $u$ is only likely under a single Hamiltonian $a$ as $p_a(u) \gg p_b(u)$ for all $b$, then we get $w_a(i) = p^\circ_a(u_i)/(N_a p^\circ_a(u_i)) = 1/N_a$, equivalent to a single count. If $u_i$ can appear in two Hamiltonians $a$ and $b$ with equal probability and no others, the weight will be $1/(N_a + N_b)$, and if the sample counts are equal $N_b = N_a$ the weight is $1/2N_a$, or half a count compared to the previous case, which makes sense because we have a doubled chance of sampling state $u$ in our combined dataset.
 
 By reversing the change of variables above, we can get the weights
 $w_t(i)$ for any desired target Hamiltonian $t$, and therefore estimate any

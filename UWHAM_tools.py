@@ -295,7 +295,7 @@ def main():
     else:
         # try to load a comma-separated set of ints, otherwise load from file
         try:
-            nsamples = np.array([int(x) for x in nsamples.split(',')])
+            nsamples = np.array([int(x) for x in args.nsamples.split(',')])
         except:
             nsamples = np.load(args.nsamples)
 
@@ -303,7 +303,11 @@ def main():
             raise ValueError("If nsamples is given, a signle BE matrix should "
 
                              "be supplied")
-        BE = np.load(args.BE[0])
+        try:
+            BE = np.load(args.BE[0])
+        except:
+            BE = np.loadtxt(args.BE[0])
+
         if np.sum(nsamples) != BE.shape[1]:
             raise ValueError(f"Total number of samples ({np.sum(nsamples)} "
                             f"does not match that in BE arrayy ({BE.shape[1]})")
