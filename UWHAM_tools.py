@@ -150,7 +150,11 @@ def overlap(weights):
     wn = weights/np.sum(weights, axis=1, keepdims=True)
     # get "overlap" between hamiltonian state spaces
     from scipy.spatial.distance import pdist, squareform
-    return 1-squareform(1-2*pdist(wn, lambda a,b: np.sum(a*b/(a+b))))
+    def dist(a,b):
+        num,den = a*b, a+b
+        # avoid div by 0 when both weights are 0
+        return np.divide(num, den, where=num != 0, out=num)
+    return 1-squareform(1-2*pdist(wn, lambda a,b: np.sum(dist(a,b))))
 
 def BoltzmannBlock(BE):
     """
@@ -317,8 +321,8 @@ def main():
     Fs, Si, weights = UWHAM(BE, nsamples, tol, niter)
     
     print("Ns: " + ", ".join(str(n) for n in nsamples))
-    print(f"Neffs: " + ", ".join(f"{n:.3f}" for n in Neff(weights)))
-    print(f"ΔlogZ: " + ", ".join(f"{d:.3f}" for d in Fs - np.mean(Fs)))
+    print(f"Neffs: " + ", ".join(f"{n:.5f}" for n in Neff(weights)))
+    print(f"ΔlogZ: " + ", ".join(f"{d:.5f}" for d in Fs - np.mean(Fs)))
 
     print("")
     print("Overlap matrix:")
