@@ -8,15 +8,15 @@ exps = lambda x: np.exp(x - np.max(x, axis=-1)[...,None])
 
 def UWHAM(BE, nsamples, tol=1e-5, niter=None):
     """
-    UWHAM for an arbitrary set of hamiltonians and samples, given the
-    B*E value (negative log likelihood) evaluated for each sample for each
+    UWHAM for an arbitrary set of Hamiltonians and samples, given the
+    BE value (negative log likelihood) evaluated for each sample for each
     hamiltonian.
 
     Inputs:
-        BE : Matrix of Boltzmann factors (negative log likelihood) of shape
-             (N,M) where N is the number of Hamiltonians and M is the total
-             number of samples from all Hamiltonians combined. Element (i,j)
-             is the Boltzmann factor under Hamiltonian i for sample j.
+        BE : Matrix of negative log likelihoods of shape (N,M) where N is the
+        number of Hamiltonians and M is the total number of samples from all
+        Hamiltonians combined. Element (i,j) is the BE value under Hamiltonian
+        i for sample j.
         nsamples : list of the number of samples from each Hamiltonian
         tol : change in Fs at which to stop iteration
         niter : if given, ignore tol and iterate this many times
@@ -35,6 +35,11 @@ def UWHAM(BE, nsamples, tol=1e-5, niter=None):
 
     logN = np.log(nsamples)
 
+    # make all elements of BE negative, for increased prec
+    # (since UWHAM is insensitive to an energy offset per column)
+    offset = np.max(BE, axis=0)
+    BE = BE - offset
+
     # iterate UWHAM equations
     is_not_finished = get_iteration_condition(niter, tol)
     while is_not_finished(Fs, Si):
@@ -44,7 +49,7 @@ def UWHAM(BE, nsamples, tol=1e-5, niter=None):
     # calculate final UWHAM weights, normalized so top weight is 1
     weights = exps(Si - BE)
     
-    return Fs, Si, weights
+    return Fs, Si + offset, weights
 
 def nlogdotexp(nM, v):
     # efficiently implements -np.log(np.dot(np.exp(-M), np.exp(v)))
@@ -87,9 +92,8 @@ def UWHAM_manyPT(B, E, tol=1e-6, niter=None, Bt=None):
     Si = np.zeros(N, dtype='double') # guess initial weights
     Fs = np.zeros(N, dtype='double') # guess initial weights
 
-    is_not_finished = get_iteration_condition(niter, tol)
-
     # iterate UWHAM equations with logsumexp trick (nlogdotexp)
+    is_not_finished = get_iteration_condition(niter, tol)
     while is_not_finished(Fs, Si):
         Si = nlogdotexp(BEt, Fs)
         Fs = nlogdotexp(BE, Si)
@@ -156,22 +160,21 @@ def overlap(weights):
         return np.divide(num, den, where=num != 0, out=num)
     return 1-squareform(1-2*pdist(wn, lambda a,b: np.sum(dist(a,b))))
 
-def BoltzmannBlock(BE):
+def BEBlock(BE):
     """
-    Convert a list-of-lists of Boltzmann factor arrays for UWHAM to a block
+    Convert a list-of-lists of BE arrays for UWHAM to a block
     matrix format.
 
     Inputs:
         BE : list of len N, of lists of len N, of form:
-            [[BEb(sa) for sa in samples] for BEb in Hamiltonians]
-            where sa is an array of sample coordinates from hamiltonian a and
-            BEb is the Boltzmann factor function for hamiltonian b, i.e. the
-            inverse temperature B=1/kT times the energy. BEb is also known as
-            the negative log likelihood. The number of hamiltonians, and number
-            of sample arrays, is N.
+            [[BEb(sa) for sa in samples] for BEb in Hamiltonians] where sa is
+            an array of sample coordinates from hamiltonian a and BEb is the
+            negative log likelihood function for hamiltonian b, i.e. the
+            inverse temperature B=1/kT times the energy. The number of
+            hamiltonians, and number of sample arrays, is N.
     Outputs:
         BEm : Matrix of shape (N,M) for number of Hamiltonians N and total
-              number of samples M, giving Boltzmann factor for all combinations.
+              number of samples M, giving BE for all combinations.
         nsamples : Number of samples from each Hamiltonian.
     """
     n_hamiltonians = len(BE)
@@ -187,7 +190,7 @@ def BoltzmannBlock(BE):
 
 def EvaluateHamiltonians(samples, hamiltonians):
     """
-    Gets the Boltzmann factor matrix given the callable negative-log-likelihood
+    Gets the BE matrix given the callable negative-log-likelihood
     hamiltonian functions and a set of samples from each likelihood function.
 
     Inputs:
@@ -195,10 +198,10 @@ def EvaluateHamiltonians(samples, hamiltonians):
         hamiltonians: list of callable vectorized functions B*E
     Outputs:
         BEm : Matrix of shape (N,M) for number of Hamiltonians N and total
-              number of samples M, giving Boltzmann factor for all combinations.
+              number of samples M, giving BE for all combinations.
         nsamples : Number of samples from each Hamiltonian.
     """
-    return BoltzmannBlock([[BEb(sa) for sa in samples] for BEb in hamiltonians])
+    return BEBlock([[BEb(sa) for sa in samples] for BEb in hamiltonians])
 
 def get_iteration_condition(niter, tol):
     """
@@ -240,8 +243,8 @@ def main():
 
     where BE_SiHj is the array of negative log-likelihoods for the sample-set
     generated by potential $i$ evaluated using potential $j$. In a common
-    scenario in physics, the negative log-likelihood is equal to the Boltzmann
-    factor $B_j E_j(x)$ for inverse temperature $B_j$ and Hamiltonian "energy"
+    scenario in physics, the negative log-likelihood is equal to 
+    $B_j E_j(x)$ for inverse temperature $B_j$ and Hamiltonian "energy"
     $E_j(x)$ for sample $x$. The number of "BE" input arrays should be a
     perfect square $N^2$ as there should be one set of samples from each of $N$
     potentials, each evaluated for each of the $N$ potentials.
@@ -251,7 +254,7 @@ def main():
     comma-separated list of number of samples for each Hamiltonian. If
     `--nsamples` is supplied the `BE` argument should be a single `.npy` file
     with an array of shape `(N,M)` for number of Hamiltonians $N$ and total
-    number of samples $M$, such that element `(i,j)` is the Boltzmann factor
+    number of samples $M$, such that element `(i,j)` is the BE factor
     under Hamiltonian $i$ for sample $j$.
 
     The script will print out:
@@ -275,7 +278,7 @@ def main():
         >>> weights = np.load('weights.npy')
         >>> Vbar1 = np.average(E1, weights=w[0]) # average under 0th potential
     """), formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('BE', nargs='*', help="Boltzmann factor files")
+    parser.add_argument('BE', nargs='*', help="negative log likelihood files")
     parser.add_argument('--weights', help="save UWHAM weights to this file")
     parser.add_argument('--tol', type=float, default=1e-6,
                         help="change in Fs at which to stop iteration")
@@ -295,7 +298,7 @@ def main():
                  f"Got {len(args.BE)} arguments which is not a perfect square")
 
         BE = [np.load(fn) for fn in args.BE]
-        BE, nsamples = BoltzmannBlock([BE[i*N:(i+1)*N] for i in range(N)])
+        BE, nsamples = BEBlock([BE[i*N:(i+1)*N] for i in range(N)])
     else:
         # try to load a comma-separated set of ints, otherwise load from file
         try:
@@ -334,7 +337,7 @@ def main():
 
 def test():
     # Demo system:
-    # Two potentials which are same boltzmann distribution at different temps
+    # Two potentials which are same BE distribution at different temps
     beta1, beta2 = 1.0, np.sqrt(2)
     # Density of states is gaussian # with std = s
     s = 2.0
@@ -368,7 +371,7 @@ def test():
     BE_S2H1 = beta1*E2
     BE_S2H2 = beta2*E2
 
-    BE, nsamples = BoltzmannBlock([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
+    BE, nsamples = BEBlock([[BE_S1H1, BE_S2H1], [BE_S1H2, BE_S2H2]])
     #np.save('BE', BE)
     #np.save('nsamples', nsamples)
 
@@ -414,6 +417,22 @@ def test():
     print("w:", np.array2string(w[0], edgeitems=2, threshold=5))
     print("Neff:", Neff(w[0]))
 
+def test2():
+    # simulated "nested" case with uniform likelihood below a cutoff
+    # We have a nesting of 4 "levels", where level 0 covers everything,
+    # level 1 is 1/100 of the volume of level0, level 2 is 1/100th of
+    # volume of level 1, and same for 2 rel to 1. 
+    BE = np.zeros((4,4000), dtype='f8')
+    BE[1,:990] = 1234
+    BE[2,:1990] = 1234
+    BE[3,:2990] = 1234
+    Fs, Si, w = UWHAM(BE, [1000,1000,1000,1000])
+
+    # the free energies should be the log of the relative volumes
+    lvol = -np.log([1.0, 1e-2, 1e-4, 1e-6])
+    print(Fs - np.mean(Fs))
+    print(lvol - np.mean(lvol))
+
 def UWHAM_krylov(BE, nsamples, tol=1e-5, niter=None):
     """
     Same as UWHAM, but uses a krylov solver.
@@ -449,3 +468,4 @@ def UWHAM_krylov(BE, nsamples, tol=1e-5, niter=None):
 if __name__ == '__main__':
     main()
     #test()
+    #test2()
